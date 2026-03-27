@@ -222,28 +222,38 @@ def generate_playlist():
     except Exception as e:
         print(f"Task encountered an error: {e}")
 
-    # 写入文件
+    # ==========================================
+    # 核心机制：原子写入防冲突
+    # ==========================================
     os.makedirs(os.path.dirname(OUTPUT_M3U_FILE), exist_ok=True)
     if success_count == 0:
-        m3u_lines.append("# No streams available at this time\n")
+        m3u_lines.append("# 当前时间段无可用直播\n")
         txt_dict["System"] = ["No streams,http://127.0.0.1/error.mp4"]
 
-    with open(OUTPUT_M3U_FILE, 'w', encoding='utf-8') as f:
+    tmp_m3u = OUTPUT_M3U_FILE + ".tmp"
+    tmp_txt = OUTPUT_TXT_FILE + ".tmp"
+
+    # 1. 先把数据老老实实写到临时文件里
+    with open(tmp_m3u, 'w', encoding='utf-8') as f:
         f.writelines(m3u_lines)
-    with open(OUTPUT_TXT_FILE, 'w', encoding='utf-8') as f:
+    with open(tmp_txt, 'w', encoding='utf-8') as f:
         for group, channels in txt_dict.items():
             f.write(f"{group},#genre#\n")
             for ch in channels: f.write(f"{ch}\n")
+            
+    # 2. 瞬间替换掉旧文件，确保播放器读取零卡顿、无空白期
+    os.replace(tmp_m3u, OUTPUT_M3U_FILE)
+    os.replace(tmp_txt, OUTPUT_TXT_FILE)
     
     finish_time = datetime.datetime.now(tz)
     print(f"[{finish_time.strftime('%Y-%m-%d %H:%M:%S')}] Task finished. Extracted {success_count} lines.")
 
+
 # ==========================================
-# 极简 Web 路由 (防扫描)
+# 极简 Web 路由
 # ==========================================
 @app.route('/')
 def index():
-    # 伪装成一个毫无特征的正常接口，防止平台风控扫描
     return "Service OK", 200
 
 @app.route('/m3u')
@@ -256,7 +266,6 @@ def get_txt():
     try: return send_file(OUTPUT_TXT_FILE, mimetype='text/plain', as_attachment=False)
     except FileNotFoundError: return "File not found", 404
 
-# 保留 debug 接口用于你需要时手动排障，它需要带参数才起作用，扫描器一般扫不出
 @app.route('/debug')
 def debug_url():
     target_url = request.args.get('url')
@@ -292,9 +301,20 @@ def run_scheduler():
         time.sleep(30)
 
 if __name__ == "__main__":
+    # ==========================================
+    # 核心机制：启动时提前创建占位文件，杜绝 404
+    # ==========================================
+    os.makedirs(os.path.dirname(OUTPUT_M3U_FILE), exist_ok=True)
+    if not os.path.exists(OUTPUT_M3U_FILE):
+        with open(OUTPUT_M3U_FILE, 'w', encoding='utf-8') as f:
+            f.write("#EXTM3U\n#EXTINF:-1,系统正在初始化抓取，请稍后(约2分钟)...\nhttp://127.0.0.1/loading.mp4\n")
+    if not os.path.exists(OUTPUT_TXT_FILE):
+        with open(OUTPUT_TXT_FILE, 'w', encoding='utf-8') as f:
+            f.write("系统提示,#genre#\n初始化抓取中(约2分钟)...,http://127.0.0.1/loading.mp4\n")
+
     threading.Thread(target=generate_playlist, daemon=True).start()
     threading.Thread(target=run_scheduler, daemon=True).start()
-    # 移除 Flask 自带的开发服务器警告输出，更加静默
+    
     import logging
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
