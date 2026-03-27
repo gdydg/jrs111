@@ -183,7 +183,7 @@ def generate_playlist():
                     play_path = None
                     for a in detail_soup.find_all('a', class_='item ok me'):
                         a_text = a.text.strip()
-                        if '高清直播' in a_text or '蓝光' in a_text:
+                        if '高清' in a_text or '蓝光' in a_text:
                             play_path = a.get('data-play')
                             break
                     
