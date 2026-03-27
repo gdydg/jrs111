@@ -296,7 +296,7 @@ def debug_url():
 
 def run_scheduler():
     # 修改点 2：每 25 分钟运行一次
-    schedule.every(14).minutes.do(generate_playlist)
+    schedule.every(20).minutes.do(generate_playlist)
     while True:
         schedule.run_pending()
         time.sleep(30)
